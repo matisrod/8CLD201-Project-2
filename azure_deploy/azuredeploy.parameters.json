@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "storageAccounts_golemsa_name": {
+      "value": "golemsa"
+    },
+    "namespaces_golemsb_name": {
+      "value": "golemsb"
+    },
+    "functionApp_name": {
+      "value": "golemfunctionapp"
+    },
+    "hostingPlan_name": {
+      "value": "golemHostingPlan"
+    },
+    "location": {
+      "value": "canadacentral"
+    }
+  }
+}
