@@ -2,6 +2,7 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
+    // Les parametres de notre fichier de deploiement
     "storageAccounts_golemsa_name": {
       "type": "String",
       "defaultValue": "parameters('storageAccounts_golemsa_name')"
@@ -30,6 +31,7 @@
   },
   "resources": [
     {
+      // Création du storage account
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2023-05-01",
       "name": "[variables('storageAccountName')]",
@@ -43,6 +45,7 @@
       }
     },
     {
+      // Création de la policy pour le storage account
       "type": "Microsoft.Storage/storageAccounts/blobServices",
       "apiVersion": "2023-05-01",
       "name": "[concat(parameters('storageAccounts_golemsa_name'), '/default')]",
@@ -65,6 +68,7 @@
       }
     },
     {
+      // création de l'initial container
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[concat(parameters('storageAccounts_golemsa_name'), '/default/initialcontainer')]",
@@ -81,6 +85,7 @@
       }
     },
     {
+      // création du final container
       "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
       "apiVersion": "2023-05-01",
       "name": "[concat(parameters('storageAccounts_golemsa_name'), '/default/finalcontainer')]",
@@ -97,6 +102,7 @@
       }
     },
     {
+      // Création du service bus
       "type": "Microsoft.ServiceBus/namespaces",
       "apiVersion": "2023-01-01-preview",
       "name": "[parameters('namespaces_golemsb_name')]",
@@ -123,6 +129,7 @@
       }
     },
     {
+      // Création des autorisations necessaires pour le service bus
       "type": "Microsoft.ServiceBus/namespaces/authorizationrules",
       "apiVersion": "2023-01-01-preview",
       "name": "[concat(parameters('namespaces_golemsb_name'), '/RootManageSharedAccessKey')]",
@@ -153,6 +160,7 @@
       }
     },
     {
+      // Création de la queue
       "type": "Microsoft.ServiceBus/namespaces/queues",
       "apiVersion": "2023-01-01-preview",
       "name": "[concat(parameters('namespaces_golemsb_name'), '/messagequeue')]",
@@ -186,6 +194,7 @@
       }
     },
     {
+      // Création de la fonction app qui va host les functions 1 et 2
       "type": "Microsoft.Web/sites",
       "apiVersion": "2022-03-01",
       "name": "[variables('functionAppName')]",
@@ -217,6 +226,7 @@
       }
     }
   ],
+  // Les outputs qui seront renvoyés a la fin du déploiement (les connexion strings)
   "outputs": {
     "storageAccountConnectionString": {
       "type": "string",
