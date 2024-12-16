@@ -1,59 +1,72 @@
-using Azure.Messaging.ServiceBus;
+using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.Processing;
 
-namespace FunctionAppTest
+namespace QueueTriggerFunction
 {
     public class Function1
     {
         private readonly ILogger<Function1> _logger;
-        private readonly string _serviceBusConnectionString;
-        private readonly string _queueName;
 
-        public Function1(ILogger<Function1> logger, IConfiguration configuration)
+        public Function1(ILogger<Function1> logger)
         {
             _logger = logger;
-            _serviceBusConnectionString = configuration["ServiceBusConnectionString"]; //chaine de connexion du service bus
-            _queueName = configuration["QueueName"]; // nom de la queue
         }
 
         [Function(nameof(Function1))]
         public async Task Run(
-            [BlobTrigger("%ContainerName%/{name}", Connection = "AzureWebJobsStorage")] Stream blobStream, 
-            string name) // s'exécute des qu'un fichier est déposé dans le container
+            [ServiceBusTrigger("%QueueName%", Connection = "ServiceBusConnectionString")] string message) // s'exécute des qu'un message arrive sur la queue
         {
-            _logger.LogInformation($"Blob trigger function started processing the blob: {name}");
+            _logger.LogInformation($"Service Bus trigger function processed message: {message}");
+
+            // Connection string and containers
+            string connectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+            string sourceContainerName = Environment.GetEnvironmentVariable("ContainerName");
+            string destinationContainerName = Environment.GetEnvironmentVariable("ContainerName2");
 
             try
             {
-                await SendMessageToServiceBusAsync(name); // Si ça marche on envoie un message au service bus
-                _logger.LogInformation($"Message for blob '{name}' sent to Service Bus queue '{_queueName}'.");
+                BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
+                BlobContainerClient sourceContainerClient = blobServiceClient.GetBlobContainerClient(sourceContainerName);
+                BlobContainerClient destinationContainerClient = blobServiceClient.GetBlobContainerClient(destinationContainerName);
+
+                BlobClient sourceBlobClient = sourceContainerClient.GetBlobClient(message);
+                if (!await sourceBlobClient.ExistsAsync())
+                {
+                    _logger.LogError($"Blob '{message}' not found in source container '{sourceContainerName}'.");
+                    return;
+                }
+
+                // On récupere localement l'image
+                MemoryStream memoryStream = new MemoryStream();
+                await sourceBlobClient.DownloadToAsync(memoryStream);
+
+                // on resize l'image (divisé par deux seulement)
+                memoryStream.Position = 0;
+                using (SixLabors.ImageSharp.Image image = SixLabors.ImageSharp.Image.Load(memoryStream))
+                {
+                    int newWidth = image.Width / 2;
+                    int newHeight = image.Height / 2;
+
+                    image.Mutate(x => x.Resize(newWidth, newHeight));
+
+                    memoryStream = new MemoryStream(); // Reset the stream
+                    image.Save(memoryStream, new JpegEncoder());
+                }
+
+
+                // ouvre le fichier au début
+                memoryStream.Position = 0;
+                BlobClient destinationBlobClient = destinationContainerClient.GetBlobClient(message); // destination de ma nouvelle image (finalcontainer)
+                await destinationBlobClient.UploadAsync(memoryStream, overwrite: true);
+
+                _logger.LogInformation($"File '{message}' successfully processed and uploaded to '{destinationContainerName}'.");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"An error occurred while processing the blob '{name}': {ex.Message}");
-            }
-        }
-
-        private async Task SendMessageToServiceBusAsync(string messageContent)
-        {
-            await using var client = new ServiceBusClient(_serviceBusConnectionString); // création du client se connectant au service bus
-            ServiceBusSender sender = client.CreateSender(_queueName); // on dit vers qui on envoie le message
-
-            try
-            {
-                ServiceBusMessage message = new ServiceBusMessage(messageContent);
-                await sender.SendMessageAsync(message); // envoie le message a la queue
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error while sending message to Service Bus: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                await sender.DisposeAsync();
+                _logger.LogError($"Error processing blob '{message}': {ex.Message}");
             }
         }
     }
