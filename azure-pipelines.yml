@@ -1,0 +1,149 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: resourceGroupName
+    value: 'golem_gang'
+  - name: rgLocation
+    value: 'Canada Central'
+  - name: AzureAppInfrastructure
+    value: 'azure_deploy'
+  - name: function1FolderName
+    value: 'function1'
+  - name: function2FolderName
+    value: 'function2'
+  - name: functionappname
+    value: 'golemfunctionapp'
+
+stages:
+- stage: Infra
+  displayName: Infrastructure Deployment
+  jobs:
+  - job: Deploy
+    displayName: Deploy Infrastructure
+    steps:
+    - script: |
+        echo "Validating azuredeploy.json"
+        jq . $(Build.SourcesDirectory)/azure_deploy/azuredeploy.json
+        echo "Validating azuredeploy.parameters.json"
+        jq . $(Build.SourcesDirectory)/azure_deploy/azuredeploy.parameters.json
+      displayName: 'Validate JSON Files'
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: 'Abonnement Azure 1(0bfd432a-65a6-44cf-abf9-07b180cbbb7a)'
+        subscriptionId: '0bfd432a-65a6-44cf-abf9-07b180cbbb7a'
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: '$(resourceGroupName)'
+        location: '$(rgLocation)'
+        templateLocation: 'Linked artifact'
+        csmFile: '$(Build.SourcesDirectory)/azure_deploy/azuredeploy.json'
+        csmParametersFile: '$(Build.SourcesDirectory)/azure_deploy/azuredeploy.parameters.json'
+        deploymentMode: 'Incremental'
+        deploymentName: 'MainDeployment'
+        deploymentOutputs: 'deploymentOutputs'
+      name: DeployARM
+      displayName: 'Deploy ARM Templates and Capture Outputs'
+
+    - script: |
+        echo "##vso[task.setvariable variable=storageAccountConnectionString;isOutput=true]$(deploymentOutputs.storageAccountConnectionString.value)"
+        echo "##vso[task.setvariable variable=serviceBusConnectionString;isOutput=true]$(deploymentOutputs.serviceBusConnectionString.value)"
+      name: setOutputs
+      displayName: 'Expose ARM deployment outputs as pipeline variables'
+
+    - script: |
+        echo "Debugging captured deployment outputs:"
+        echo "Storage Account Connection String: $(deploymentOutputs.storageAccountConnectionString.value)"
+        echo "Service Bus Connection String: $(deploymentOutputs.serviceBusConnectionString.value)"
+      displayName: 'Debug Deployment Outputs'
+
+- stage: DeployFunctions
+  displayName: Deploy Azure Functions
+  dependsOn: Infra
+  variables:
+    storageAccountConnectionString2: $[ dependencies.Infra.outputs['DeployARM.setOutputs.storageAccountConnectionString'] ]
+    serviceBusConnectionString2: $[ dependencies.Infra.outputs['DeployARM.setOutputs.serviceBusConnectionString'] ]
+  jobs:
+  - job: DeployFunction1
+    displayName: Deploy Function1
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.x'
+      displayName: 'Install .NET SDK 8.0'
+
+    - script: |
+        echo "Updating local.settings.json for Function1"
+        jq ".Values.AzureWebJobsStorage = \"$(storageAccountConnectionString2)\"" $(Build.SourcesDirectory)/$(function1FolderName)/local.settings.json > $(Build.SourcesDirectory)/$(function1FolderName)/local.settings.json.tmp
+        jq ".Values.ServiceBusConnectionString = \"$(serviceBusConnectionString2)\"" $(Build.SourcesDirectory)/$(function1FolderName)/local.settings.json.tmp > $(Build.SourcesDirectory)/$(function1FolderName)/local.settings.json
+        rm $(Build.SourcesDirectory)/$(function1FolderName)/local.settings.json.tmp
+      displayName: 'Update Function1 local.settings.json'
+
+    - script: |
+        echo "Displaying updated local.settings.json for Function1"
+        cat $(Build.SourcesDirectory)/$(function1FolderName)/local.settings.json
+      displayName: 'Show Function1 local.settings.json'
+
+    - script: |
+        echo "Debugging Variables for Function1 Deployment"
+        echo "Storage Account Connection String: $(storageAccountConnectionString2)"
+        echo "Service Bus Connection String: $(serviceBusConnectionString2)"
+      displayName: 'Debug Variables in DeployFunctions Stage'
+
+    - script: |
+        cd $(Build.SourcesDirectory)/$(function1FolderName)
+        dotnet publish -o $(Build.ArtifactStagingDirectory)/function1
+      displayName: 'Publish Function1'
+
+    - task: AzureFunctionApp@1
+      inputs:
+        azureSubscription: 'Abonnement Azure 1(0bfd432a-65a6-44cf-abf9-07b180cbbb7a)'
+        appType: 'functionApp'
+        appName: $(functionappname)
+        package: '$(Build.ArtifactStagingDirectory)/function1'
+      displayName: 'Deploy Function1'
+
+  - job: DeployFunction2
+    displayName: Deploy Function2
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.x'
+      displayName: 'Install .NET SDK 8.0'
+
+    - script: |
+        echo "Updating local.settings.json for Function2"
+        jq ".Values.AzureWebJobsStorage = \"$(storageAccountConnectionString2)\"" $(Build.SourcesDirectory)/$(function2FolderName)/local.settings.json > $(Build.SourcesDirectory)/$(function2FolderName)/local.settings.json.tmp
+        jq ".Values.ServiceBusConnectionString = \"$(serviceBusConnectionString2)\"" $(Build.SourcesDirectory)/$(function2FolderName)/local.settings.json.tmp > $(Build.SourcesDirectory)/$(function2FolderName)/local.settings.json
+        rm $(Build.SourcesDirectory)/$(function2FolderName)/local.settings.json.tmp
+      displayName: 'Update Function2 local.settings.json'
+
+    - script: |
+        echo "Displaying updated local.settings.json for Function2"
+        cat $(Build.SourcesDirectory)/$(function2FolderName)/local.settings.json
+      displayName: 'Show Function2 local.settings.json'
+
+    - script: |
+        echo "Debugging Variables for Function2 Deployment"
+        echo "Storage Account Connection String: $(storageAccountConnectionString2)"
+        echo "Service Bus Connection String: $(serviceBusConnectionString2)"
+      displayName: 'Debug Variables in DeployFunctions Stage'
+
+    - script: |
+        cd $(Build.SourcesDirectory)/$(function2FolderName)
+        dotnet publish -o $(Build.ArtifactStagingDirectory)/function2
+      displayName: 'Publish Function2'
+
+    - task: AzureFunctionApp@1
+      inputs:
+        azureSubscription: 'Abonnement Azure 1(0bfd432a-65a6-44cf-abf9-07b180cbbb7a)'
+        appType: 'functionApp'
+        appName: $(functionappname)
+        package: '$(Build.ArtifactStagingDirectory)/function2'
+      displayName: 'Deploy Function2'
