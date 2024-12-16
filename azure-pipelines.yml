@@ -4,7 +4,7 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
-variables:
+variables: # les variables importantes
   - name: resourceGroupName
     value: 'golem_gang'
   - name: rgLocation
@@ -22,9 +22,11 @@ stages:
 - stage: Infra
   displayName: Infrastructure Deployment
   jobs:
+  # déploiement de l'infrastructure de base
   - job: Deploy
     displayName: Deploy Infrastructure
     steps:
+    # vérifications de notre fichier json
     - script: |
         echo "Validating azuredeploy.json"
         jq . $(Build.SourcesDirectory)/azure_deploy/azuredeploy.json
@@ -34,6 +36,7 @@ stages:
 
     - task: AzureResourceManagerTemplateDeployment@3
       inputs:
+      # entrées pour noter déploiment
         deploymentScope: 'Resource Group'
         azureResourceManagerConnection: 'Abonnement Azure 1(0bfd432a-65a6-44cf-abf9-07b180cbbb7a)'
         subscriptionId: '0bfd432a-65a6-44cf-abf9-07b180cbbb7a'
@@ -49,26 +52,29 @@ stages:
       name: DeployARM
       displayName: 'Deploy ARM Templates and Capture Outputs'
 
+      # on met les valeurs des outputs dans les variables du yaml
     - script: |
         echo "##vso[task.setvariable variable=storageAccountConnectionString;isOutput=true]$(deploymentOutputs.storageAccountConnectionString.value)"
         echo "##vso[task.setvariable variable=serviceBusConnectionString;isOutput=true]$(deploymentOutputs.serviceBusConnectionString.value)"
       name: setOutputs
       displayName: 'Expose ARM deployment outputs as pipeline variables'
 
+      #vérification des connexion strings
     - script: |
         echo "Debugging captured deployment outputs:"
         echo "Storage Account Connection String: $(deploymentOutputs.storageAccountConnectionString.value)"
         echo "Service Bus Connection String: $(deploymentOutputs.serviceBusConnectionString.value)"
       displayName: 'Debug Deployment Outputs'
 
-- stage: DeployFunctions
+- stage: DeployFunctions # on commence a déployer les fonctions
   displayName: Deploy Azure Functions
   dependsOn: Infra
   variables:
+    # On met les connexion strings dans des variables locales pour ce stage
     storageAccountConnectionString2: $[ dependencies.Infra.outputs['DeployARM.setOutputs.storageAccountConnectionString'] ]
     serviceBusConnectionString2: $[ dependencies.Infra.outputs['DeployARM.setOutputs.serviceBusConnectionString'] ]
   jobs:
-  - job: DeployFunction1
+  - job: DeployFunction1 # déploiement de la premiere fonction
     displayName: Deploy Function1
     steps:
     - task: UseDotNet@2
@@ -108,7 +114,7 @@ stages:
         package: '$(Build.ArtifactStagingDirectory)/function1'
       displayName: 'Deploy Function1'
 
-  - job: DeployFunction2
+  - job: DeployFunction2 # déploiement de la premiere fonction
     displayName: Deploy Function2
     steps:
     - task: UseDotNet@2
