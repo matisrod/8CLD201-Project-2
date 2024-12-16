@@ -14,20 +14,20 @@ namespace FunctionAppTest
         public Function1(ILogger<Function1> logger, IConfiguration configuration)
         {
             _logger = logger;
-            _serviceBusConnectionString = configuration["ServiceBusConnectionString"];
-            _queueName = configuration["QueueName"];
+            _serviceBusConnectionString = configuration["ServiceBusConnectionString"]; //chaine de connexion du service bus
+            _queueName = configuration["QueueName"]; // nom de la queue
         }
 
         [Function(nameof(Function1))]
         public async Task Run(
             [BlobTrigger("%ContainerName%/{name}", Connection = "AzureWebJobsStorage")] Stream blobStream, 
-            string name)
+            string name) // s'exécute des qu'un fichier est déposé dans le container
         {
             _logger.LogInformation($"Blob trigger function started processing the blob: {name}");
 
             try
             {
-                await SendMessageToServiceBusAsync(name);
+                await SendMessageToServiceBusAsync(name); // Si ça marche on envoie un message au service bus
                 _logger.LogInformation($"Message for blob '{name}' sent to Service Bus queue '{_queueName}'.");
             }
             catch (Exception ex)
@@ -38,13 +38,13 @@ namespace FunctionAppTest
 
         private async Task SendMessageToServiceBusAsync(string messageContent)
         {
-            await using var client = new ServiceBusClient(_serviceBusConnectionString);
-            ServiceBusSender sender = client.CreateSender(_queueName);
+            await using var client = new ServiceBusClient(_serviceBusConnectionString); // création du client se connectant au service bus
+            ServiceBusSender sender = client.CreateSender(_queueName); // on dit vers qui on envoie le message
 
             try
             {
                 ServiceBusMessage message = new ServiceBusMessage(messageContent);
-                await sender.SendMessageAsync(message);
+                await sender.SendMessageAsync(message); // envoie le message a la queue
             }
             catch (Exception ex)
             {
